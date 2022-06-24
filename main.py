@@ -8,6 +8,7 @@ import asyncio
 import sqlite3
 import json
 import time
+import os
 from datetime import datetime
 
 from telebot.asyncio_handler_backends import State, StatesGroup
@@ -16,7 +17,7 @@ from telebot import asyncio_filters
 
 
 
-bot = AsyncTeleBot("5405209426:AAFG3h3W7bOe2FUuXexQ3PplOdMWAUc-6AI")
+bot = AsyncTeleBot(os.getenv("TOKEN"))
 
 
 
