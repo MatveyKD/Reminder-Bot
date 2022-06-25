@@ -8,7 +8,6 @@ import asyncio
 import sqlite3
 import json
 import time
-import os
 from datetime import datetime
 
 from telebot.asyncio_handler_backends import State, StatesGroup
@@ -17,7 +16,7 @@ from telebot import asyncio_filters
 
 
 
-bot = AsyncTeleBot(os.getenv("TOKEN"))
+bot = AsyncTeleBot("5405209426:AAFG3h3W7bOe2FUuXexQ3PplOdMWAUc-6AI")
 
 
 
@@ -108,14 +107,14 @@ async def add_remind_time(message):
         await bot.set_state(message.from_user.id, AddRemind.time, message.chat.id)
         return
 
-    if datetime.now().time() > time.time() and reminds_info[message.chat.id][-1]["date"] == datetime.now().date():
+    if datetime.now().time() > time.time() and reminds_info[message.chat.id][-1]["date"] == datetime.now().date().strftime("%d.%m.%Y"):
         await bot.send_message(message.chat.id, "Вы ввели прошедшее время. Пожалуйста, введите будущее время")
         await bot.set_state(message.from_user.id, AddRemind.time, message.chat.id)
         return
 
     reminds_info[message.chat.id][-1]["time"] = message.text
     await bot.send_message(message.chat.id, "Введите текст напоминания")
-    await bot.set_state(message.from_user.id, AddRemind.date, message.chat.id)
+    await bot.set_state(message.from_user.id, AddRemind.text, message.chat.id)
     await asyncio.sleep(0)
 
 @bot.message_handler(state=AddRemind.text)
@@ -154,13 +153,10 @@ async def check_reminds():
 
         for remind in reminds:
             date, time, text, user = remind
-            send_remind(date, time, text, user)
+            await bot.send_message(user, f"Напоминание от {date}: {time}\n{text}")
             connect.execute(f"DELETE FROM reminds WHERE date='{date}' AND time='{time}' AND user='{user}' AND remind='{text}'")
             connect.commit()
         await asyncio.sleep(0)
-
-def send_remind(date, time, text, user):
-    bot.send_message(user, f"Напоминание от {date}: {time}\n{text}")
 
 
 async def main():
