@@ -16,6 +16,7 @@ from telebot.asyncio_handler_backends import State, StatesGroup
 from telebot.asyncio_storage import StateMemoryStorage
 from telebot import asyncio_filters
 
+
 load_dotenv()
 
 bot = AsyncTeleBot(os.getenv("TOKEN"))
@@ -38,23 +39,10 @@ class EditRemind(StatesGroup):
 
 
 
-#Database create
-connect = sqlite3.connect("reminds.db")
-cursor = connect.cursor()
-
-cursor.execute("""CREATE TABLE IF NOT EXISTS reminds(
-    date DATE,
-    time TIME,
-    remind TEXT,
-    user TEXT
-)""")
-
-connect.commit()
-
 #-----------------------------------------HELP/START--Помощь----------------------------------------------#
 @bot.message_handler(commands=["help"])
 async def help(message):
-    bot.send_message(message.chat.id, """Вас приветствует Чат-бот Напоминаний. Данный чат-бот создан для напоминания о предстоящих событиях.
+    await bot.send_message(message.chat.id, """Вас приветствует Чат-бот Напоминаний. Данный чат-бот создан для напоминания о предстоящих событиях.
 Полный список команд:
 /help - команда для ориентации  пользователя по боту.
 /add_remind - добавить напоминание.
@@ -77,10 +65,9 @@ async def start(message):
 
 
 #------------------------------------add_remind---------------------------------------------------------------#
-reminds_info = {}
 @bot.message_handler(commands=["add_remind"])
 async def add_remind(message):
-    await bot.send_message(message.chat.id, "Введите дату напоминания в формате DD.MM.YYYY")
+    await bot.send_message(message.chat.id, "Введите дату напоминания в формате DD.MM.YYYY (cancel для отмены операции)")
     if not message.chat.id in reminds_info:
         reminds_info[message.chat.id] = []
     reminds_info[message.chat.id].append({
@@ -94,6 +81,10 @@ async def add_remind(message):
 
 @bot.message_handler(state=AddRemind.date)
 async def add_remind_date(message):
+    if "cancel" in message.text.lower():
+        await bot.send_message(message.chat.id, "Операция отменена.")
+        await bot.set_state(message.from_user.id, 0, message.chat.id)
+        return
     try:
         date = datetime.strptime(message.text, "%d.%m.%Y")
     except ValueError:
@@ -198,9 +189,6 @@ async def del_remind_remind(message):
 
 
 #-------------------------------EDIT_REMIND-----------------------------------------------------------------------------#
-
-edit_reminds_info = {}
-
 @bot.message_handler(commands=["edit_remind"])
 async def select_edit_remind(message):
     keyboard, reminds = get_keyboard_reminds(message.chat.id)
@@ -332,5 +320,24 @@ async def check_reminds():
 async def main():
     await asyncio.gather(bot.infinity_polling(), check_reminds())
 
-bot.add_custom_filter(asyncio_filters.StateFilter(bot))
-asyncio.run(main())
+
+if __name__ == '__main__':
+    edit_reminds_info = {}
+    reminds_info = {}
+
+    # Database create
+    connect = sqlite3.connect("reminds.db")
+    cursor = connect.cursor()
+
+    cursor.execute("""CREATE TABLE IF NOT EXISTS reminds(
+        date DATE,
+        time TIME,
+        remind TEXT,
+        user TEXT
+    )""")
+
+    connect.commit()
+
+    bot.add_custom_filter(asyncio_filters.StateFilter(bot))
+
+    asyncio.run(main())
