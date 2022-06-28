@@ -323,7 +323,7 @@ async def check_reminds():
         for remind in reminds:
             date, time, text, user = remind
             print(date, time, text, user)
-            await bot.send_message(user, f"Напоминание от {date}: {time}\n{text}")
+            await bot.send_message(user, f"<b>⏰ Напоминание от {date}: {time}\n{text}</b>", parse_mode='html')
             connect.execute(f"DELETE FROM reminds WHERE date='{date}' AND time='{time}' AND user='{user}' AND remind='{text}'")
             connect.commit()
         await asyncio.sleep(0)
