@@ -10,7 +10,7 @@ import json
 import os
 from dotenv import load_dotenv
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from telebot.asyncio_handler_backends import State, StatesGroup
 from telebot.asyncio_storage import StateMemoryStorage
@@ -24,6 +24,7 @@ bot = AsyncTeleBot(os.getenv("TOKEN"))
 
 
 class AddRemind(StatesGroup):
+    regular = State()
     date = State()
     time = State()
     text = State()
@@ -67,16 +68,32 @@ async def start(message):
 #------------------------------------add_remind---------------------------------------------------------------#
 @bot.message_handler(commands=["add_remind"])
 async def add_remind(message):
-    await bot.send_message(message.chat.id, "Введите дату напоминания в формате DD.MM.YYYY (cancel для отмены операции)")
+    keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(telebot.types.KeyboardButton("Да"))
+    keyboard.add(telebot.types.KeyboardButton("Нет"))
+    await bot.send_message(message.chat.id, "Сделать напоминание регулярным (нажмите Да или Нет)", reply_markup=keyboard)
     if not message.chat.id in reminds_info:
         reminds_info[message.chat.id] = []
     reminds_info[message.chat.id].append({
         "date": "",
         "time": "",
-        "text": ""
+        "text": "",
+        "regular": False
     })
-    await bot.set_state(message.from_user.id, AddRemind.date, message.chat.id)
+    await bot.set_state(message.from_user.id, AddRemind.regular, message.chat.id)
     await asyncio.sleep(0)
+
+
+@bot.message_handler(state=AddRemind.regular)
+async def add_remind_regular(message):
+    if "да" in message.text.lower():
+        reminds_info[message.chat.id][-1]["regular"] = True
+        reminds_info[message.chat.id][-1]["date"] = datetime.strftime(datetime.now().date(), "%d.%m.%Y")
+        await bot.send_message(message.chat.id, "Введите время напоминания в формате HH:MM", reply_markup=telebot.types.ReplyKeyboardRemove())
+        await bot.set_state(message.from_user.id, AddRemind.time, message.chat.id)
+    else:
+        await bot.send_message(message.chat.id, "Введите дату напоминания в формате DD.MM.YYYY (cancel для отмены операции)", reply_markup=telebot.types.ReplyKeyboardRemove())
+        await bot.set_state(message.from_user.id, AddRemind.date, message.chat.id)
 
 
 @bot.message_handler(state=AddRemind.date)
@@ -128,12 +145,13 @@ async def add_remind_text(message):
     connect = sqlite3.connect("reminds.db")
 
     payload = f"""INSERT INTO reminds
-(date, time, remind, user)
+(date, time, remind, regular, user)
 VALUES
 (\
 "{reminds_info[message.chat.id][-1]["date"]}",\
 "{reminds_info[message.chat.id][-1]["time"]}",\
 "{reminds_info[message.chat.id][-1]["text"]}",\
+"{reminds_info[message.chat.id][-1]["regular"]}",\
 "{message.chat.id}"\
 );
     """
@@ -291,30 +309,48 @@ WHERE date='{edit_reminds_info[message.chat.id][-1]["old"]["date"]}' AND time='{
     #await asyncio.sleep(0)
 
 
-#-------------------------------SHOW_REMIND-----------------------------------------------------------------------------#
+#-------------------------------SHOW_REMINDS-----------------------------------------------------------------------------#
 @bot.message_handler(commands=["show_reminds"])
 async def show_reminds(message):
     connect = sqlite3.connect("reminds.db")
     reminds = list(connect.execute(f"SELECT * FROM reminds WHERE user='{message.chat.id}'"))
 
-    for remind in reminds:
-        await bot.send_message(message.chat.id, f"{remind[0]} в {remind[1]}:\n{remind[2]}")
+    if reminds:
+        for remind in reminds:
+            if remind[3] == "False":
+                await bot.send_message(message.chat.id, f"{remind[0]} в {remind[1]}:\n{remind[2]}")
+            else:
+                await bot.send_message(message.chat.id, f"{remind[0]} в {remind[1]}: (регулярное)\n{remind[2]}")
+    else:
+        await bot.send_message(message.chat.id, "Не создано ни одного напоминания")
 
 
 
 async def check_reminds():
     while True:
-        connect = sqlite3.connect("reminds.db")
+        try:
+            connect = sqlite3.connect("reminds.db")
 
-        reminds = list(connect.execute(f"SELECT * FROM reminds WHERE date='{datetime.now().date().strftime('%d.%m.%Y')}' AND time<='{datetime.now().time().strftime('%H:%M')}'"))
+            reminds = list(connect.execute(f"SELECT * FROM reminds WHERE date='{datetime.now().date().strftime('%d.%m.%Y')}' AND time<='{datetime.now().time().strftime('%H:%M')}'"))
 
-        for remind in reminds:
-            date, time, text, user = remind
-            print(date, time, text, user)
-            await bot.send_message(user, f"<b>⏰ Напоминание от {date}: {time}\n{text}</b>", parse_mode='html')
-            connect.execute(f"DELETE FROM reminds WHERE date='{date}' AND time='{time}' AND user='{user}' AND remind='{text}'")
-            connect.commit()
-        await asyncio.sleep(0)
+            for remind in reminds:
+                date, time, text, is_regular, user = remind
+                if not is_regular:
+                    await bot.send_message(user, f"<b>⏰ Напоминание от {date}: {time}\n{text}</b>", parse_mode='html')
+                    connect.execute(f"DELETE FROM reminds WHERE date='{date}' AND time='{time}' AND user='{user}' AND remind='{text}'")
+                else:
+                    await bot.send_message(user, f"<b>⏰ Напоминание от {date}: {time} (регулярное)\n{text}</b>", parse_mode='html')
+                    connect.execute(f"""UPDATE reminds SET \
+                    date="{(datetime.today() + timedelta(days=1)).strftime("%d.%m.%Y")}" \
+                    WHERE date='{date}' AND time='{time}' AND remind='{text}' AND user='{user}';
+                        """)
+                connect.commit()
+
+            await asyncio.sleep(0)
+        except RuntimeError:
+            pass
+        except telebot.asyncio_helper.ApiTelegramException:
+            pass
 
 
 async def main():
@@ -333,6 +369,7 @@ if __name__ == '__main__':
         date DATE,
         time TIME,
         remind TEXT,
+        regular BOOLEAN,
         user TEXT
     )""")
 
